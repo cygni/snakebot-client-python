@@ -13,7 +13,7 @@ dependencies and virtualenvs for the project. To install `pipenv`:
 sudo pip install pipenv
 ```
 
-Once you have `piipenv` installed you can use it to download all dependencies
+Once you have `pipenv` installed you can use it to download all dependencies
 and activate the virtualenv:
 ```
 pipenv shell

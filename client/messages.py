@@ -1,34 +1,46 @@
 import platform
-
-# Inbound
-GAME_ENDED = "se.cygni.snake.api.event.GameEndedEvent"
-TOURNAMENT_ENDED = "se.cygni.snake.api.event.TournamentEndedEvent"
-MAP_UPDATE = "se.cygni.snake.api.event.MapUpdateEvent"
-SNAKE_DEAD = "se.cygni.snake.api.event.SnakeDeadEvent"
-GAME_STARTING = "se.cygni.snake.api.event.GameStartingEvent"
-PLAYER_REGISTERED = "se.cygni.snake.api.response.PlayerRegistered"
-INVALID_PLAYER_NAME = "se.cygni.snake.api.exception.InvalidPlayerName"
-HEART_BEAT_RESPONSE = "se.cygni.snake.api.response.HeartBeatResponse"
-GAME_LINK_EVENT = "se.cygni.snake.api.event.GameLinkEvent"
-GAME_RESULT_EVENT = "se.cygni.snake.api.event.GameResultEvent"
-
-# Outbound
-REGISTER_PLAYER_MESSAGE_TYPE = "se.cygni.snake.api.request.RegisterPlayer"
-START_GAME = "se.cygni.snake.api.request.StartGame"
-REGISTER_MOVE = "se.cygni.snake.api.request.RegisterMove"
-HEART_BEAT_REQUEST = "se.cygni.snake.api.request.HeartBeatRequest"
-CLIENT_INFO = "se.cygni.snake.api.request.ClientInfo"
+import sys
+from enum import Enum
 
 
-def player_registration(snake_name):
-    return {
-        'type': REGISTER_PLAYER_MESSAGE_TYPE,
-        'playerName': snake_name,
-        'gameSettings': {}
-    }
+class MessageType(Enum):
+    # Exceptions
+    InvalidMessage = "se.cygni.snake.api.exception.InvalidMessage"
+    InvalidPlayerName = "se.cygni.snake.api.exception.InvalidPlayerName"
+    NoActiveTournament = "se.cygni.snake.api.exception.NoActiveTournament"
+    InvalidArenaName = "se.cygni.snake.api.exception.InvalidArenaName"
+    ArenaIsFull = "se.cygni.snake.api.exception.ArenaIsFull"
+
+    # Responses
+    HeartbeatResponse = "se.cygni.snake.api.response.HeartBeatResponse"
+    PlayerRegistered = "se.cygni.snake.api.response.PlayerRegistered"
+
+    # Events
+    GameLink = "se.cygni.snake.api.event.GameLinkEvent"
+    GameStarting = "se.cygni.snake.api.event.GameStartingEvent"
+    MapUpdate = "se.cygni.snake.api.event.MapUpdateEvent"
+    SnakeDead = "se.cygni.snake.api.event.SnakeDeadEvent"
+    GameResult = "se.cygni.snake.api.event.GameResultEvent"
+    GameEnded = "se.cygni.snake.api.event.GameEndedEvent"
+    TournamentEnded = "se.cygni.snake.api.event.TournamentEndedEvent"
+
+    # Requests
+    ClientInfo = "se.cygni.snake.api.request.ClientInfo"
+    StartGame = "se.cygni.snake.api.request.StartGame"
+    RegisterPlayer = "se.cygni.snake.api.request.RegisterPlayer"
+    RegisterMove = "se.cygni.snake.api.request.RegisterMove"
+    HeartbeatRequest = "se.cygni.snake.api.request.HeartBeatRequest"
 
 
-def client_info():
+def create_client_info_message():
+    python_version_string = ".".join(
+        [
+            str(sys.version_info.major),
+            str(sys.version_info.minor),
+            str(sys.version_info.micro),
+        ]
+    )
+
     platform_name = platform.system()
     os_name = "Maybe Linux"
     os_version = "0.0.0"
@@ -43,30 +55,41 @@ def client_info():
         os_version, _, _ = platform.win32_ver()
 
     return {
-        'type': CLIENT_INFO,
-        'language': 'Python',
-        'languageVersion': platform.python_version(),
-        'operatingSystem': os_name,
-        'operatingSystemVersion': os_version,
-        'clientVersion': 1.0
+        "type": MessageType.ClientInfo.value,
+        "language": "Python",
+        "languageVersion": python_version_string,
+        "clientVersion": 2.0,
+        "operatingSystem": os_name,
+        "operatingSystemVersion": os_version,
     }
 
 
-def register_move(next_move, message):
+def create_heartbeat_request_message(receiving_player_id):
     return {
-        'type': REGISTER_MOVE,
-        'direction': next_move,
-        'gameTick': message['gameTick'],
-        'receivingPlayerId': message['receivingPlayerId'],
-        'gameId': message['gameId']
+        "type": MessageType.HeartbeatRequest.value,
+        "receivingPlayerId": receiving_player_id,
     }
 
 
-def start_game():
+def create_register_move_message(direction, receiving_player_id, game_id, game_tick):
     return {
-        'type': START_GAME
+        "type": MessageType.RegisterMove.value,
+        "direction": direction,
+        "receivingPlayerId": receiving_player_id,
+        "gameId": game_id,
+        "gameTick": game_tick,
     }
 
 
-def heart_beat(player_id):
-    return {'type': HEART_BEAT_REQUEST, 'receivingPlayerId': player_id}
+def create_register_player_message(player_name, game_settings):
+    return {
+        "type": MessageType.RegisterPlayer.value,
+        "playerName": player_name,
+        "gameSettings": game_settings,
+    }
+
+
+def create_start_game_message():
+    return {
+        "type": MessageType.StartGame.value,
+    }

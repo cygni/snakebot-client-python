@@ -1,141 +1,223 @@
 import math
 
-from enum import Enum
+from .types import (
+    Direction,
+    GameSettings,
+    RawMap,
+    RelativeDirection,
+    SnakeInfo,
+    TileType,
+)
 
 
-def translate_position(position, map_width):
-    y = math.floor((position / map_width))
-    x = math.floor(math.fabs(position - y * map_width))
-
-    return (x, y)
-
-
-def translate_positions(positions, map_width):
-    return [translate_position(pos, map_width) for pos in positions]
-
-
-def translate_coordinate(coordinate, map_width):
-    x, y = coordinate
-    return x + y * map_width
+def get_direction_delta(direction: Direction) -> tuple[int, int]:
+    if direction == Direction.Up:
+        return 0, -1
+    elif direction == Direction.Down:
+        return 0, 1
+    elif direction == Direction.Left:
+        return -1, 0
+    elif direction == Direction.Right:
+        return 1, 0
+    else:
+        raise ValueError(f"Unknown direction: {direction}")
 
 
-def translate_coordinates(coordinates, map_width):
-    return [translate_coordinate(c, map_width) for c in coordinates]
+class Coordinate:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    @staticmethod
+    def from_position(position: int, map_height: int) -> "Coordinate":
+        x = position % map_height
+        y = (position - x) / map_height
+        return Coordinate(x, y)
+
+    def is_within_square(
+        self, northwest: "Coordinate", southeast: "Coordinate"
+    ) -> bool:
+        return (
+            self.x >= northwest.x
+            and self.x <= southeast.x
+            and self.y >= northwest.y
+            and self.y <= southeast.y
+        )
+
+    def is_out_of_bounds(self, map_width: int, map_height: int) -> bool:
+        return self.x < 0 or self.y < 0 or self.x >= map_width or self.y >= map_height
+
+    def euclidian_distance_to(self, other_coordinate: "Coordinate") -> float:
+        return math.sqrt(
+            math.pow(other_coordinate.x - self.x, 2)
+            + math.pow(other_coordinate.y - self.y, 2)
+        )
+
+    def manhattan_distance_to(self, other_coordinate: "Coordinate") -> int:
+        return abs(other_coordinate.x - self.x) + abs(other_coordinate.y - self.y)
+
+    def delta_to(self, other_coordinate: "Coordinate") -> tuple[int, int]:
+        delta_x = other_coordinate.x - self.x
+        delta_y = other_coordinate.y - self.y
+        return delta_x, delta_y
+
+    def to_position(self, map_width: int, map_height: int) -> int:
+        if self.is_out_of_bounds(map_width, map_height):
+            raise ValueError(
+                "The coordinate must be within the bounds in order to convert to position"
+            )
+        return self.x + self.y * map_width
+
+    def negated(self) -> "Coordinate":
+        return Coordinate(-self.x, -self.y)
+
+    def translate_by_delta(self, delta_x: int, delta_y: int) -> "Coordinate":
+        return Coordinate(self.x + delta_x, self.y + delta_y)
+
+    def translate_by_direction(self, direction: Direction) -> "Coordinate":
+        delta_x, delta_y = get_direction_delta(direction)
+        return self.translate_by_delta(delta_x, delta_y)
+
+    def direction_to(self, other_coordinate: "Coordinate") -> Direction:
+        delta_x, delta_y = self.delta_to(other_coordinate)
+        if delta_x == 0 and delta_y == -1:
+            return Direction.Up
+        elif delta_x == 0 and delta_y == 1:
+            return Direction.Down
+        elif delta_x == -1 and delta_y == 0:
+            return Direction.Left
+        elif delta_x == 1 and delta_y == 0:
+            return Direction.Right
+        else:
+            raise ValueError(
+                f"Coordinate is too far away! Difference is ({delta_x}, {delta_y})"
+            )
 
 
-def get_manhattan_distance(start, goal):
-    x1, y1 = start
-    x2, y2 = goal
+class GameMap:
+    def __init__(
+        self, map: RawMap, player_id: str, game_settings: GameSettings, game_tick: int
+    ):
+        snakes = {}
+        tiles = {}
 
-    x = math.fabs(x1 - x2)
-    y = math.fabs(y1 - y2)
+        for food_position in map.foodPositions:
+            tiles[food_position] = TileType.Food
 
-    return (x, y)
+        for obstacle_position in map.obstaclePositions:
+            tiles[obstacle_position] = TileType.Obstacle
+
+        for snake_info in map.snakeInfos:
+            snake = Snake.from_snake_info(snake_info, map.width, self)
+            snakes[snake_info.id] = snake
+            for snake_position in snake_info.positions:
+                tiles[snake_position] = TileType.Snake
+
+        self.player_id = player_id
+        self.width = map.width
+        self.height = map.height
+        self.snakes = snakes
+        self.tiles = tiles
+        self.game_settings = game_settings
+        self.game_tick = game_tick
+
+    @property
+    def player_snake(self) -> "Snake":
+        return self.snakes[self.player_id]
+
+    def get_tile_type(self, coordinate: Coordinate) -> TileType:
+        width, height = self.width, self.height
+
+        if coordinate.is_out_of_bounds(width, height):
+            return TileType.Obstacle
+
+        position = coordinate.to_position(width, height)
+        tile_type = self.tiles.get(position)
+
+        if tile_type is None:
+            return TileType.Empty
+
+        return tile_type
+
+    def is_tile_free(self, coordinate: Coordinate) -> bool:
+        return self.get_tile_type(coordinate) in (TileType.Empty, TileType.Food)
 
 
-def get_euclidian_distance(start, goal):
-    x1, y1 = start
-    x2, y2 = goal
-
-    x = math.pow((x1 - x2), 2)
-    y = math.pow((y1 - y2), 2)
-
-    return math.floor(math.sqrt(x + y))
-
-
-def is_within_square(coord, nw_coord, se_coord):
-    x, y = coord
-    nw_x, nw_y = nw_coord
-    se_x, se_y = se_coord
-
-    return x >= nw_x and x <= se_x and y >= nw_y and y <= se_y
-
-
-class TileType(Enum):
-    EMPTY = ("EMPTY", True)
-    WALL = ("WALL", False)
-    FOOD = ("FOOD", True)
-    OBSTACLE = ("OBSTACLE", False)
-    SNAKE_HEAD = ("SNAKE_HEAD", False)
-    SNAKE_BODY = ("SNAKE_BODY", False)
-    SNAKE_TAIL = ("SNAKE_TAIL", False)
-
-    def __init__(self, id, movable):
+class Snake:
+    def __init__(
+        self,
+        id: str,
+        name: str,
+        direction: Direction,
+        coordinates: list[Coordinate],
+        map: GameMap,
+    ):
         self.id = id
-        self.movable = movable
+        self.name = name
+        self.direction = direction
+        self.coordinates = coordinates
+        self.map = map
 
-    def __str__(self):
-        return self.id
+    @classmethod
+    def from_snake_info(cls, snake_info: SnakeInfo, map_width: int, map: GameMap):
+        id = snake_info.id
+        name = snake_info.name
+        positions = snake_info.positions
+        coordinates = [
+            Coordinate.from_position(position, map_width) for position in positions
+        ]
+        # Calculate the direction of the snake
+        direction = Direction.Up
+        if len(coordinates) > 1:
+            delta_x, delta_y = coordinates[1].delta_to(coordinates[0])
+            if delta_x == 1:
+                direction = Direction.Right
+            elif delta_x == -1:
+                direction = Direction.Left
+            elif delta_y == 1:
+                direction = Direction.Down
+            elif delta_y == -1:
+                direction = Direction.Up
 
+        return cls(id, name, direction, coordinates, map)
 
-class Tile(object):
-    def __init__(self, tile_type, coordinate):
-        self.tile_type = tile_type
-        self.coordinate = coordinate
+    def can_move_in_direction(self, direction: Direction) -> bool:
+        snake_head = self.coordinates[0]
+        next_coord = snake_head.translate_by_direction(direction)
+        return self.map.is_tile_free(next_coord)
 
+    def relative_to_absolute(self, relative_direction: RelativeDirection) -> Direction:
+        if relative_direction == RelativeDirection.Forward:
+            return self.direction
+        elif relative_direction == RelativeDirection.Left:
+            if self.direction == Direction.Up:
+                return Direction.Left
+            elif self.direction == Direction.Down:
+                return Direction.Right
+            elif self.direction == Direction.Left:
+                return Direction.Down
+            elif self.direction == Direction.Right:
+                return Direction.Up
+        elif relative_direction == RelativeDirection.Right:
+            if self.direction == Direction.Up:
+                return Direction.Right
+            elif self.direction == Direction.Down:
+                return Direction.Left
+            elif self.direction == Direction.Left:
+                return Direction.Up
+            elif self.direction == Direction.Right:
+                return Direction.Down
 
-class Direction(Enum):
-    DOWN = ("DOWN", (0, 1))
-    UP = ("UP", (0, -1))
-    LEFT = ("LEFT", (-1, 0))
-    RIGHT = ("RIGHT", (1, 0))
+        raise Exception(f"Unknown direction: {self.direction}")
 
-    def __init__(self, id, movement_delta):
-        self.id = id
-        self.movement_delta = movement_delta
+    @property
+    def head_coordinate(self) -> Coordinate:
+        return self.coordinates[0]
 
-    def __str__(self):
-        return self.id
+    @property
+    def tail_coordinate(self) -> Coordinate:
+        return self.coordinates[-1]
 
-
-class Map(object):
-    def __init__(self, game_map):
-        self.game_map = game_map
-        self.width = game_map['width']
-        self.height = game_map['height']
-
-    def get_snake_by_id(self, snake_id):
-        return next((s for s in self.game_map['snakeInfos']
-                     if s['id'] == snake_id), None)
-
-    def get_tile_at(self, coordinate):
-        position = translate_coordinate(coordinate, self.width)
-
-        snake_at_pos = None
-        for snake in self.game_map['snakeInfos']:
-            if position in snake['positions']:
-                snake_at_pos = snake
-
-        tile_type = TileType.EMPTY
-        if snake_at_pos:
-            if position == snake_at_pos['positions'][0]:
-                tile_type = TileType.SNAKE_HEAD
-            elif position == snake_at_pos['positions'][-1]:
-                tile_type = TileType.SNAKE_TAIL
-            else:
-                tile_type = TileType.SNAKE_BODY
-        elif position in self.game_map['obstaclePositions']:
-            tile_type = TileType.OBSTACLE
-        elif position in self.game_map['foodPositions']:
-            tile_type = TileType.FOOD
-        elif self.is_coordinate_out_of_bounds(coordinate):
-            tile_type = TileType.WALL
-
-        return Tile(tile_type, coordinate)
-
-    def is_tile_available_for_movement(self, coordinate):
-        tile = self.get_tile_at(coordinate)
-
-        return (tile.tile_type == TileType.EMPTY or
-                tile.tile_type == TileType.FOOD)
-
-    def can_snake_move_in_direction(self, snake_id, direction):
-        snake = self.get_snake_by_id(snake_id)
-        x, y = translate_position(snake['positions'][0], self.width)
-        xd, yd = direction.movement_delta
-
-        return self.is_tile_available_for_movement((x + xd, y + yd))
-
-    def is_coordinate_out_of_bounds(self, coordinate):
-        x, y = coordinate
-        return x < 0 or x >= self.width or y < 0 or y >= self.height
+    @property
+    def length(self) -> int:
+        return len(self.coordinates)

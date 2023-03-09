@@ -1,0 +1,8 @@
+autobahn
+twisted
+colorlog
+pytest
+mypy
+black
+pyOpenSSL
+service_identity
